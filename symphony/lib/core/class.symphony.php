@@ -88,6 +88,12 @@ abstract class Symphony implements Singleton
     private static $exception = null;
 
     /**
+     * The version of the available Symphony upgrade, if available.
+     * @var string
+     */
+    private static $migrationVersion = null;
+
+    /**
      * The Symphony constructor initialises the class variables of Symphony. At present
      * constructor has a couple of responsibilities:
      * - Start a profiler instance
@@ -113,11 +119,7 @@ abstract class Symphony implements Singleton
         Lang::initialize();
         Lang::set(self::$Configuration->get('lang', 'symphony'));
 
-        $this->initialiseLog();
-
-        GenericExceptionHandler::initialise(self::Log());
-        GenericErrorHandler::initialise(self::Log());
-
+        $this->initialiseErrorHandler();
         $this->initialiseDatabase();
         $this->initialiseExtensionManager();
         $this->initialiseSessionAndCookies();
@@ -247,7 +249,8 @@ abstract class Symphony implements Singleton
 
         // Get the Handler from the Configuration
         $handler = self::Configuration()->get('handler', 'log');
-        $context = array_merge(array(
+        $context = array_merge(
+            array(
                 'vars' => array(
                     'filename' => $filename
                 )
@@ -300,11 +303,10 @@ abstract class Symphony implements Singleton
      */
     public function initialiseSessionAndCookies()
     {
-        $name = '';
+        $name = null;
         $timeout = $this->getSessionTimeout();
         $cookie_path = DIRROOT === '' ? '/' : DIRROOT;
 
-        $name = null;
         if (class_exists('Administration', false)) {
             $name = self::Configuration()->get('admin_session_name', 'session');
         } else {
@@ -587,7 +589,7 @@ abstract class Symphony implements Singleton
                 self::Session()->set('pass', self::$Author->get('password'));
 
                 self::Database()->update(array(
-                    'last_seen' => DateTimeObj::get('Y-m-d H:i:s')
+                        'last_seen' => DateTimeObj::get('Y-m-d H:i:s')
                     ),
                     'tbl_authors',
                     " `id` = ?",
@@ -713,11 +715,14 @@ abstract class Symphony implements Singleton
      */
     public static function getMigrationVersion()
     {
-        if (self::isInstallerAvailable()) {
+        if (null === self::$migrationVersion && self::isInstallerAvailable()) {
             $migrations = scandir(DOCROOT . '/install/migrations');
             $migration_file = end($migrations);
-            $migration_class = 'migration_' . str_replace('.', '', substr($migration_file, 0, -4));
-            return call_user_func(array($migration_class, 'getVersion'));
+
+            $migration_class = 'SymphonyCms\\Installer\\Migrations\\migration_' . str_replace('.', '', substr($migration_file, 0, -4));
+            self::$migrationVersion = call_user_func(array($migration_class, 'getVersion'));
+        } else {
+            self::$migrationVersion = false;
         }
 
         return false;
@@ -846,7 +851,7 @@ abstract class Symphony implements Singleton
             if ($bits[0] === 'extension') {
                 self::$namespace = sprintf('/%s/%s/%s', $bits[0], $bits[1], $bits[2]);
             } else {
-                self::$namespace =  sprintf('/%s/%s', $bits[0], isset($bits[1]) ? $bits[1] : '');
+                self::$namespace = sprintf('/%s/%s', $bits[0], isset($bits[1]) ? $bits[1] : '');
             }
         }
 
